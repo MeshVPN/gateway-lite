@@ -121,7 +121,9 @@ func (mgr *sessionMgr) handleLogin(c *gin.Context) {
 		})
 		return
 	}
-	if token != gToken {
+	// validate token: built-in user or any registered user
+	owner := gStore.getUserByToken(token)
+	if token != gToken && owner == nil {
 		gLog.Println(LvERROR, "Invalid token:", token)
 		sess.writeSync(MsgLogin, 0, &LoginRsp{
 			Error:  600,
@@ -130,9 +132,25 @@ func (mgr *sessionMgr) handleLogin(c *gin.Context) {
 		})
 		return
 	}
+	// resolve the owning user from token(supports multi-user via register API)
+	if owner != nil {
+		sess.user = owner.User
+	} else {
+		sess.user = gUser
+	}
 	mgr.allSessionsMtx.Lock()
 	mgr.allSessions[sess.nodeID] = sess
 	mgr.allSessionsMtx.Unlock()
+	// persist device record so it shows up even when offline
+	gStore.upsertDevice(&StoreDevice{
+		Name:       sess.node,
+		User:       sess.user,
+		IPv4:       sess.IPv4,
+		NatType:    sess.natType,
+		Bandwidth:  sess.shareBandWidth,
+		Version:    sess.version,
+		Activetime: time.Now().Format("2006-01-02 15:04:05"),
+	})
 	gLog.Println(LvDEBUG, sess)
 	gLog.Println(LvINFO, "client login success:", sess.node)
 	// TODO: use epoll for large numbers of connections

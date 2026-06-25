@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -93,25 +94,58 @@ func AuthMiddleware() gin.HandlerFunc {
 				c.Abort()
 				return
 			}
+			c.Set("user", claims.User)
 		}
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Next()
 	}
 }
 
+func ctxUser(c *gin.Context) string {
+	if u, ok := c.Get("user"); ok {
+		if s, ok := u.(string); ok && s != "" {
+			return s
+		}
+	}
+	return gUser
+}
+
 func runWeb() {
 	router := gin.Default()
-	router.GET("/api/v1/devices", listDevices, AuthMiddleware())
-	router.GET("/api/v1/device/:name/restart", restartDevice, AuthMiddleware())
+	router.Use(CORSMiddleware())
+	router.GET("/", serveWebUI)
+	router.GET("/index.html", serveWebUI)
+	router.GET("/api/v1/update", updateInfo)
+	router.GET("/api/v1/devices", AuthMiddleware(), listDevices)
+	router.GET("/api/v1/device/:name/restart", AuthMiddleware(), restartDevice)
 	user := router.Group("/api/v1/user")
 	user.POST("/login", webLogin)
+	user.POST("/register", registerUser)
+	user.GET("/profile", AuthMiddleware(), getProfile)
+	user.POST("/profile", AuthMiddleware(), updateProfile)
 	device := router.Group("/api/v1/device")
 	device.Use(AuthMiddleware())
 	device.GET("/:name/apps", listApps)
 	device.POST("/:name/app", editApp)
 	device.POST("/:name/switchapp", switchApp)
+	device.POST("/:name/editnode", editNode)
+	device.GET("/:name/log", getDeviceLog)
+	sdwan := router.Group("/api/v1/sdwan")
+	sdwan.Use(AuthMiddleware())
+	sdwan.GET("/networks", listNetworks)
+	sdwan.POST("/network", saveNetwork)
+	sdwan.POST("/network/:id/delete", deleteNetwork)
+	sdwan.POST("/network/:id/member", addNetworkMember)
+	sdwan.POST("/network/:id/member/delete", delNetworkMember)
 	router.RunTLS(":10008", "api.crt", "api.key")
 	// router.Run(":10008")
+}
+
+// updateInfo is the client auto-update endpoint. self-hosting gateway does not
+// host binaries, so it reports "already latest"(Error:0, empty Url) to keep the
+// client update check from erroring.
+func updateInfo(c *gin.Context) {
+	c.JSON(http.StatusOK, UpdateInfo{Error: 0})
 }
 
 func webLogin(c *gin.Context) {
@@ -120,18 +154,40 @@ func webLogin(c *gin.Context) {
 	err := json.Unmarshal(data, &req)
 	if err != nil {
 		log.Println("wrong loginReq")
+		c.JSON(http.StatusBadRequest, gin.H{"error": 1, "detail": "请求格式错误"})
 		return
 	}
-	gLog.Println(LvINFO, "wechatLogin:", req.User)
-	if req.User != gUser || req.Password != gPassword {
-		c.String(http.StatusBadRequest, "登录失败")
+	gLog.Println(LvINFO, "webLogin:", req.User)
+	// brute-force protection: throttle by client IP + username
+	guardKey := c.ClientIP() + "|" + req.User
+	if ok, wait := gLoginGuard.allowed(guardKey); !ok {
+		gLog.Println(LvWARN, "login locked:", guardKey)
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error":  429,
+			"detail": fmt.Sprintf("登录失败次数过多，请%d秒后重试", wait),
+		})
+		return
+	}
+	// authenticate against the store(built-in user is also in the store)
+	// constant-time password compare to avoid timing attacks; always compare
+	// even when the user does not exist to keep timing uniform.
+	u := gStore.getUser(req.User)
+	stored := ""
+	if u != nil {
+		stored = u.Password
+	}
+	if u == nil || !constantTimeEqual(stored, req.Password) {
+		gLoginGuard.onFailure(guardKey)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": 401, "detail": "用户名或密码错误"})
 		log.Println("authorize error:")
 		return
 	}
+	gLoginGuard.onSuccess(guardKey)
+	nodeToken := u.Token
 	// new token
 	claim := OpenP2PClaim{
 		User:         req.User,
-		InstallToken: fmt.Sprintf("%d", gToken),
+		InstallToken: fmt.Sprintf("%d", nodeToken),
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: time.Now().AddDate(0, 0, 1).Unix(),
 			// ExpiresAt: time.Now().Add(time.Second * 60).Unix(),  // test
@@ -151,20 +207,22 @@ func webLogin(c *gin.Context) {
 	log.Println("authorize ok:")
 	c.JSON(http.StatusOK, gin.H{
 		"token":     tokenString,
-		"nodeToken": fmt.Sprintf("%d", gToken),
+		"nodeToken": fmt.Sprintf("%d", nodeToken),
 		"error":     0,
 	})
 }
 
 func listDevices(c *gin.Context) {
-	gWSSessionMgr.allSessionsMtx.RLock()
-	defer gWSSessionMgr.allSessionsMtx.RUnlock()
-	// TODO: no query latestVer each request.
-	var latestVer string
+	user := ctxUser(c)
 	nodes := deviceList{}
-	nodes.LatestVer = latestVer
-	// list online devices
+	online := make(map[string]bool)
+	// online devices from memory
+	gWSSessionMgr.allSessionsMtx.RLock()
 	for _, sess := range gWSSessionMgr.allSessions {
+		if sess.user != user {
+			continue
+		}
+		online[sess.node] = true
 		data := deviceInfo{}
 		data.Name = sess.node
 		data.NatType = fmt.Sprintf("%d", sess.natType)
@@ -181,7 +239,30 @@ func listDevices(c *gin.Context) {
 		data.ID = fmt.Sprintf("%d", nodeNameToID(data.Name))
 		nodes.Nodes = append(nodes.Nodes, data)
 	}
-	// TODO: list offline devices in mysql
+	gWSSessionMgr.allSessionsMtx.RUnlock()
+	// offline devices from store
+	for _, d := range gStore.listDevicesByUser(user) {
+		if online[d.Name] {
+			continue
+		}
+		data := deviceInfo{}
+		data.Name = d.Name
+		data.NatType = fmt.Sprintf("%d", d.NatType)
+		data.Bandwidth = fmt.Sprintf("%d", d.Bandwidth)
+		data.IP = d.IPv4
+		data.IPv6 = d.IPv6
+		data.LanIP = d.LanIP
+		data.MAC = d.MAC
+		data.OS = d.OS
+		data.Version = d.Version
+		data.Remark = d.Remark
+		data.Addtime = d.Addtime
+		data.Activetime = d.Activetime
+		data.IsActive = 0
+		data.IsUpdate = false
+		data.ID = fmt.Sprintf("%d", nodeNameToID(data.Name))
+		nodes.Nodes = append(nodes.Nodes, data)
+	}
 	log.Println("get devices:", nodes)
 	c.JSON(http.StatusOK, nodes)
 }
@@ -210,6 +291,43 @@ func listApps(c *gin.Context) {
 		// Timed out after 5 seconds!
 		log.Printf("listTunnel %d timeout.", uuid)
 		c.JSON(http.StatusNotFound, gin.H{"error": 9, "detail": "timeout"})
+	}
+}
+
+// getDeviceLog requests the realtime running log of an online device. The
+// client reads the log file from its disk and pushes back the content. The
+// frontend polls this endpoint(with offset) to implement realtime tailing.
+func getDeviceLog(c *gin.Context) {
+	nodeName := c.Param("name")
+	uuid := nodeNameToID(nodeName)
+	gWSSessionMgr.allSessionsMtx.Lock()
+	sess, ok := gWSSessionMgr.allSessions[uuid]
+	gWSSessionMgr.allSessionsMtx.Unlock()
+	if !ok {
+		c.JSON(http.StatusOK, gin.H{"error": 1, "detail": "device offline"})
+		return
+	}
+	offset, _ := strconv.ParseInt(c.Query("offset"), 10, 64)
+	length, _ := strconv.ParseInt(c.Query("len"), 10, 64)
+	if length <= 0 {
+		length = 64 * 1024
+	}
+	req := ReportLogReq{
+		FileName: "openp2p.log",
+		Offset:   offset,
+		Len:      length,
+	}
+	// drain any stale response before sending a new request
+	select {
+	case <-sess.rspCh:
+	default:
+	}
+	sess.write(MsgPush, MsgPushReportLog, &req)
+	select {
+	case msg := <-sess.rspCh:
+		c.Data(http.StatusOK, "application/json; charset=utf-8", msg)
+	case <-time.After(ClientAPITimeout):
+		c.JSON(http.StatusOK, gin.H{"error": 9, "detail": "timeout"})
 	}
 }
 

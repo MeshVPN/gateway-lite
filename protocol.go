@@ -77,26 +77,35 @@ const (
 	MsgRelay     = 5
 	MsgReport    = 6
 	MsgQuery     = 7
+	MsgSDWAN     = 8
 )
 
 // TODO: seperate node push and web push.
 const (
-	MsgPushRsp               = 0
-	MsgPushConnectReq        = 1
-	MsgPushConnectRsp        = 2
-	MsgPushHandshakeStart    = 3
-	MsgPushAddRelayTunnelReq = 4
-	MsgPushAddRelayTunnelRsp = 5
-	MsgPushUpdate            = 6
-	MsgPushReportApps        = 7
-	MsgPushUnderlayConnect   = 8
-	MsgPushEditApp           = 9
-	MsgPushSwitchApp         = 10
-	MsgPushRestart           = 11
-	MsgPushEditNode          = 12
-	MsgPushAPPKey            = 13
-	MsgPushReportLog         = 14
-	MsgPushDstNodeOnline     = 15
+	MsgPushRsp                  = 0
+	MsgPushConnectReq           = 1
+	MsgPushConnectRsp           = 2
+	MsgPushHandshakeStart       = 3
+	MsgPushAddRelayTunnelReq    = 4
+	MsgPushAddRelayTunnelRsp    = 5
+	MsgPushUpdate               = 6
+	MsgPushReportApps           = 7
+	MsgPushUnderlayConnect      = 8
+	MsgPushEditApp              = 9
+	MsgPushSwitchApp            = 10
+	MsgPushRestart              = 11
+	MsgPushEditNode             = 12
+	MsgPushAPPKey               = 13
+	MsgPushReportLog            = 14
+	MsgPushDstNodeOnline        = 15
+	MsgPushReportGoroutine      = 16
+	MsgPushReportMemApps        = 17
+	MsgPushServerSideSaveMemApp = 18
+	MsgPushCheckRemoteService   = 19
+	MsgPushSpecTunnel           = 20
+	MsgPushReportHeap           = 21
+	MsgPushSDWanRefresh         = 22
+	MsgPushNat4Detect           = 23
 )
 
 // MsgP2P sub type message
@@ -129,6 +138,9 @@ const (
 	MsgReportConnect
 	MsgReportApps
 	MsgReportLog
+	MsgReportMemApps
+	MsgReportResponse
+	MsgReportBasicRsp
 )
 
 const (
@@ -182,6 +194,12 @@ const (
 const (
 	MsgQueryPeerInfoReq = iota
 	MsgQueryPeerInfoRsp
+)
+
+// MsgSDWAN sub type message
+const (
+	MsgSDWANInfoReq = iota
+	MsgSDWANInfoRsp
 )
 
 func newMessage(mainType uint16, subType uint16, packet interface{}) ([]byte, error) {
@@ -430,7 +448,29 @@ type QueryPeerInfoRsp struct {
 	Version         string `json:"version,omitempty"`
 	NatType         int    `json:"natType,omitempty"`
 	IPv4            string `json:"IPv4,omitempty"`
+	LanIP           string `json:"lanIP,omitempty"`
 	HasIPv4         int    `json:"hasIPv4,omitempty"` // has public ipv4
 	IPv6            string `json:"IPv6,omitempty"`    // if public relay node, ipv6 not set
 	HasUPNPorNATPMP int    `json:"hasUPNPorNATPMP,omitempty"`
+}
+
+type SDWANNode struct {
+	Name     string `json:"name,omitempty"`
+	IP       string `json:"ip,omitempty"`
+	Resource string `json:"resource,omitempty"`
+	Enable   int32  `json:"enable,omitempty"`
+}
+
+type SDWANInfo struct {
+	ID            uint64       `json:"id,omitempty"`
+	Name          string       `json:"name,omitempty"`
+	Gateway       string       `json:"gateway,omitempty"`
+	Mode          string       `json:"mode,omitempty"` // default: fullmesh; central
+	CentralNode   string       `json:"centralNode,omitempty"`
+	ForceRelay    int32        `json:"forceRelay,omitempty"`
+	PunchPriority int32        `json:"punchPriority,omitempty"`
+	Enable        int32        `json:"enable,omitempty"`
+	TunnelNum     int32        `json:"tunnelNum,omitempty"`
+	Mtu           int32        `json:"mtu,omitempty"`
+	Nodes         []*SDWANNode `json:"Nodes"`
 }

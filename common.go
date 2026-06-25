@@ -203,6 +203,11 @@ func IsIPv6(address string) bool {
 	return strings.Count(address, ":") >= 2
 }
 
+func isLoopbackIP(address string) bool {
+	ip := net.ParseIP(address)
+	return ip != nil && ip.IsLoopback()
+}
+
 var letters = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890-")
 
 func randStr(n int) string {

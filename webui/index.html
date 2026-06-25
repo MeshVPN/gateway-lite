@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenP2P Gateway 控制台</title>
+<style>
+  :root {
+    --bg: #f5f6fa;
+    --card: #ffffff;
+    --primary: #4f7cff;
+    --primary-dark: #3b63d6;
+    --text: #1f2533;
+    --muted: #8b93a7;
+    --border: #e6e8ef;
+    --danger: #e5484d;
+    --ok: #2faa6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px;
+  }
+  button {
+    cursor: pointer; border: none; border-radius: 6px; padding: 8px 14px;
+    background: var(--primary); color: #fff; font-size: 13px; transition: background .15s;
+  }
+  button:hover { background: var(--primary-dark); }
+  button.ghost { background: transparent; color: var(--primary); border: 1px solid var(--border); }
+  button.ghost:hover { background: #eef2ff; }
+  button.danger { background: var(--danger); }
+  button.danger:hover { background: #c93b40; }
+  button.sm { padding: 4px 10px; font-size: 12px; }
+  input, select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--border);
+    border-radius: 6px; font-size: 13px; outline: none; background: #fff;
+  }
+  input:focus, select:focus { border-color: var(--primary); }
+  .hidden { display: none !important; }
+
+  /* login */
+  #loginView {
+    display: flex; align-items: center; justify-content: center; min-height: 100vh;
+  }
+  .login-card {
+    background: var(--card); padding: 36px 32px; border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.08); width: 340px;
+  }
+  .login-card h1 { font-size: 20px; margin: 0 0 4px; }
+  .login-card p.sub { color: var(--muted); margin: 0 0 24px; font-size: 13px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 12px; }
+  .login-card button { width: 100%; padding: 10px; margin-top: 6px; }
+  .err { color: var(--danger); font-size: 12px; min-height: 16px; margin-top: 8px; }
+  .toggle-link { text-align: center; margin-top: 14px; font-size: 12px; color: var(--muted); }
+  .toggle-link a { color: var(--primary); cursor: pointer; }
+
+  /* app layout */
+  #appView { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 200px; background: #1f2533; color: #cdd3e0; padding: 20px 0; flex-shrink: 0;
+  }
+  .sidebar .brand { font-size: 16px; font-weight: 600; color: #fff; padding: 0 22px 20px; }
+  .sidebar .nav-item {
+    padding: 11px 22px; cursor: pointer; font-size: 14px; color: #aab2c5;
+    border-left: 3px solid transparent;
+  }
+  .sidebar .nav-item:hover { background: #272e40; color: #fff; }
+  .sidebar .nav-item.active { background: #272e40; color: #fff; border-left-color: var(--primary); }
+  .main { flex: 1; display: flex; flex-direction: column; }
+  .topbar {
+    height: 56px; background: var(--card); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; padding: 0 24px;
+  }
+  .topbar .title { font-size: 16px; font-weight: 600; }
+  .topbar .user-box { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; }
+  .content { padding: 24px; flex: 1; overflow: auto; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px; margin-bottom: 18px;
+  }
+  .card h3 { margin: 0 0 16px; font-size: 15px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  th { color: var(--muted); font-weight: 500; background: #fafbfd; }
+  tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .badge.on { background: #e3f6ec; color: var(--ok); }
+  .badge.off { background: #f0f1f5; color: var(--muted); }
+  .toolbar { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .kv { display: flex; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .kv:last-child { border-bottom: none; }
+  .kv .k { width: 140px; color: var(--muted); }
+  .kv .v { flex: 1; word-break: break-all; }
+  .empty { color: var(--muted); text-align: center; padding: 30px; }
+  .toast {
+    position: fixed; top: 20px; right: 20px; background: #1f2533; color: #fff;
+    padding: 12px 18px; border-radius: 8px; font-size: 13px; opacity: 0;
+    transform: translateY(-10px); transition: all .2s; z-index: 1000;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.err { background: var(--danger); }
+  .modal-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex;
+    align-items: center; justify-content: center; z-index: 900;
+  }
+  .modal {
+    background: #fff; border-radius: 10px; padding: 24px; width: 420px; max-width: 90vw;
+  }
+  .modal h3 { margin: 0 0 18px; }
+  .modal .field { margin-bottom: 14px; }
+  .modal .field label { display:block; margin-bottom:6px; color: var(--muted); font-size:12px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+  code.token { background:#f0f1f5; padding:3px 8px; border-radius:5px; font-size:12px; }
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="loginView">
+  <div class="login-card">
+    <h1>OpenP2P Gateway</h1>
+    <p class="sub" id="loginSub">登录到自建网关控制台</p>
+    <div class="field">
+      <label>用户名</label>
+      <input id="inUser" autocomplete="username" placeholder="用户名">
+    </div>
+    <div class="field">
+      <label>密码</label>
+      <input id="inPass" type="password" autocomplete="current-password" placeholder="密码">
+    </div>
+    <button id="btnAuth" onclick="doAuth()">登录</button>
+    <div class="err" id="loginErr"></div>
+    <div class="toggle-link" id="toggleAuth">
+      还没有账号？<a onclick="switchMode()">注册新账号</a>
+    </div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="appView" class="hidden">
+  <div class="sidebar">
+    <div class="brand">OpenP2P</div>
+    <div class="nav-item active" data-panel="device" onclick="switchPanel('device')">设备</div>
+    <div class="nav-item" data-panel="sdwan" onclick="switchPanel('sdwan')">虚拟网络</div>
+    <div class="nav-item" data-panel="install" onclick="switchPanel('install')">安装</div>
+    <div class="nav-item" data-panel="profile" onclick="switchPanel('profile')">我</div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="title" id="panelTitle">设备</div>
+      <div class="user-box">
+        <span id="curUser"></span>
+        <button class="ghost sm" onclick="logout()">退出登录</button>
+      </div>
+    </div>
+    <div class="content">
+
+      <!-- DEVICE -->
+      <div class="panel active" id="panel-device">
+        <div class="toolbar">
+          <button onclick="loadDevices()">刷新</button>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr>
+              <th>名称</th><th>状态</th><th>系统</th><th>公网IP</th><th>内网IP</th>
+              <th>NAT</th><th>版本</th><th>最后活跃</th><th>操作</th>
+            </tr></thead>
+            <tbody id="deviceBody"></tbody>
+          </table>
+          <div class="empty hidden" id="deviceEmpty">暂无设备</div>
+        </div>
+      </div>
+
+      <!-- SDWAN -->
+      <div class="panel" id="panel-sdwan">
+        <div class="toolbar">
+          <button onclick="openNetModal()">新建虚拟网络</button>
+          <button class="ghost" onclick="loadNetworks()">刷新</button>
+        </div>
+        <div id="netList"></div>
+        <div class="empty hidden" id="netEmpty">暂无虚拟网络</div>
+      </div>
+
+      <!-- INSTALL -->
+      <div class="panel" id="panel-install">
+        <div class="card">
+          <h3>安装客户端</h3>
+          <p>在目标设备上运行 OpenP2P 客户端，使用下列参数连接到本网关：</p>
+          <div class="kv"><div class="k">网关地址</div><div class="v" id="instServer"></div></div>
+          <div class="kv"><div class="k">登录 Token</div><div class="v"><code class="token" id="instToken"></code></div></div>
+          <div class="kv"><div class="k">命令行示例</div><div class="v"><code class="token" id="instCmd"></code></div></div>
+          <p style="color:var(--muted);margin-top:16px;">说明：自建网关不托管客户端二进制，请从官方渠道获取 openp2p 可执行文件，再使用上述参数启动。</p>
+        </div>
+      </div>
+
+      <!-- PROFILE -->
+      <div class="panel" id="panel-profile">
+        <div class="card">
+          <h3>个人信息</h3>
+          <div class="kv"><div class="k">用户名</div><div class="v" id="pfUser"></div></div>
+          <div class="kv"><div class="k">Token</div><div class="v"><code class="token" id="pfToken"></code></div></div>
+          <div class="kv"><div class="k">注册时间</div><div class="v" id="pfAddtime"></div></div>
+        </div>
+        <div class="card">
+          <h3>编辑资料</h3>
+          <div class="grid2">
+            <div class="field"><label>邮箱</label><input id="pfEmail"></div>
+            <div class="field"><label>手机</label><input id="pfPhone"></div>
+          </div>
+          <button onclick="saveProfile()">保存</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- network modal -->
+<div class="modal-mask hidden" id="netModal">
+  <div class="modal">
+    <h3 id="netModalTitle">新建虚拟网络</h3>
+    <input type="hidden" id="netId">
+    <div class="field"><label>名称</label><input id="netName" placeholder="例如 mynet"></div>
+    <div class="field"><label>网关 CIDR</label><input id="netGateway" placeholder="例如 10.2.3.1/24"></div>
+    <div class="grid2">
+      <div class="field"><label>模式</label>
+        <select id="netMode"><option value="fullmesh">fullmesh</option><option value="central">central</option></select>
+      </div>
+      <div class="field"><label>启用</label>
+        <select id="netEnable"><option value="1">是</option><option value="0">否</option></select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="ghost" onclick="closeModal('netModal')">取消</button>
+      <button onclick="submitNet()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- member modal -->
+<div class="modal-mask hidden" id="memberModal">
+  <div class="modal">
+    <h3>添加/编辑成员</h3>
+    <input type="hidden" id="memNetId">
+    <div class="field"><label>节点名称（≥8字符）</label><input id="memName" placeholder="节点名"></div>
+    <div class="grid2">
+      <div class="field"><label>虚拟IP（留空自动分配）</label><input id="memIP" placeholder="自动分配"></div>
+      <div class="field"><label>启用</label>
+        <select id="memEnable"><option value="1">是</option><option value="0">否</option></select>
+      </div>
+    </div>
+    <div class="field"><label>资源路由(可选)</label><input id="memResource" placeholder="如 192.168.1.0/24"></div>
+    <div class="modal-actions">
+      <button class="ghost" onclick="closeModal('memberModal')">取消</button>
+      <button onclick="submitMember()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- rename modal -->
+<div class="modal-mask hidden" id="renameModal">
+  <div class="modal">
+    <h3>重命名设备</h3>
+    <input type="hidden" id="renameOld">
+    <div class="field"><label>新名称（≥8字符）</label><input id="renameNew"></div>
+    <div class="modal-actions">
+      <button class="ghost" onclick="closeModal('renameModal')">取消</button>
+      <button onclick="submitRename()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- log modal -->
+<div class="modal-mask hidden" id="logModal">
+  <div class="modal" style="width:760px;max-width:94vw;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 style="margin:0;">设备日志 - <span id="logNode"></span></h3>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;">
+          <input type="checkbox" id="logAuto" checked style="width:auto;" onchange="toggleAutoLog()"> 实时刷新
+        </label>
+        <button class="ghost sm" onclick="refreshLogOnce()">刷新</button>
+      </div>
+    </div>
+    <pre id="logContent" style="background:#1b1f2a;color:#cdd3e0;padding:14px;border-radius:8px;height:420px;overflow:auto;margin:0;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-all;">加载中...</pre>
+    <div class="modal-actions">
+      <button class="ghost" onclick="closeLog()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = "/api/v1";
+let TOKEN = localStorage.getItem("op2p_token") || "";
+let USER = localStorage.getItem("op2p_user") || "";
+let NODE_TOKEN = localStorage.getItem("op2p_nodetoken") || "";
+let isRegister = false;
+
+function toast(msg, isErr) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = "toast show" + (isErr ? " err" : "");
+  setTimeout(() => { t.className = "toast"; }, 2200);
+}
+
+async function api(path, method, body, auth) {
+  const headers = { "Content-Type": "application/json" };
+  if (auth !== false && TOKEN) headers["Authorization"] = TOKEN;
+  const opt = { method: method || "GET", headers };
+  if (body !== undefined) opt.body = JSON.stringify(body);
+  const res = await fetch(API + path, opt);
+  if (res.status === 401 && auth !== false) { logout(); throw new Error("登录已过期"); }
+  const text = await res.text();
+  let data = {};
+  try { data = text ? JSON.parse(text) : {}; } catch (e) { data = { raw: text }; }
+  if (!res.ok) throw new Error(data.detail || text || ("HTTP " + res.status));
+  return data;
+}
+
+/* ---------- auth ---------- */
+function switchMode() {
+  isRegister = !isRegister;
+  document.getElementById("btnAuth").textContent = isRegister ? "注册" : "登录";
+  document.getElementById("loginSub").textContent = isRegister ? "注册新账号" : "登录到自建网关控制台";
+  document.getElementById("toggleAuth").innerHTML = isRegister
+    ? '已有账号？<a onclick="switchMode()">返回登录</a>'
+    : '还没有账号？<a onclick="switchMode()">注册新账号</a>';
+  document.getElementById("loginErr").textContent = "";
+}
+
+async function doAuth() {
+  const user = document.getElementById("inUser").value.trim();
+  const password = document.getElementById("inPass").value;
+  const errEl = document.getElementById("loginErr");
+  errEl.textContent = "";
+  if (!user || !password) { errEl.textContent = "请输入用户名和密码"; return; }
+  try {
+    if (isRegister) {
+      await api("/user/register", "POST", { user, password }, false);
+      toast("注册成功，请登录");
+      switchMode();
+      return;
+    }
+    const data = await api("/user/login", "POST", { user, password }, false);
+    TOKEN = data.token; USER = user; NODE_TOKEN = data.nodeToken || "";
+    localStorage.setItem("op2p_token", TOKEN);
+    localStorage.setItem("op2p_user", USER);
+    localStorage.setItem("op2p_nodetoken", NODE_TOKEN);
+    enterApp();
+  } catch (e) {
+    errEl.textContent = e.message || "操作失败";
+  }
+}
+
+function logout() {
+  TOKEN = ""; USER = ""; NODE_TOKEN = "";
+  localStorage.removeItem("op2p_token");
+  localStorage.removeItem("op2p_user");
+  localStorage.removeItem("op2p_nodetoken");
+  document.getElementById("appView").classList.add("hidden");
+  document.getElementById("loginView").classList.remove("hidden");
+}
+
+function enterApp() {
+  document.getElementById("loginView").classList.add("hidden");
+  document.getElementById("appView").classList.remove("hidden");
+  document.getElementById("curUser").textContent = USER;
+  switchPanel("device");
+}
+
+/* ---------- panels ---------- */
+const TITLES = { device: "设备", sdwan: "虚拟网络", install: "安装", profile: "我" };
+function switchPanel(name) {
+  document.querySelectorAll(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.panel === name));
+  document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+  document.getElementById("panel-" + name).classList.add("active");
+  document.getElementById("panelTitle").textContent = TITLES[name];
+  if (name === "device") loadDevices();
+  if (name === "sdwan") loadNetworks();
+  if (name === "install") loadInstall();
+  if (name === "profile") loadProfile();
+}
+
+/* ---------- devices ---------- */
+async function loadDevices() {
+  const body = document.getElementById("deviceBody");
+  body.innerHTML = "";
+  try {
+    const data = await api("/devices");
+    const nodes = data.nodes || [];
+    document.getElementById("deviceEmpty").classList.toggle("hidden", nodes.length > 0);
+    nodes.forEach(d => {
+      const tr = document.createElement("tr");
+      const active = d.isActive === 1;
+      tr.innerHTML = `
+        <td>${esc(d.name)}</td>
+        <td><span class="badge ${active ? 'on' : 'off'}">${active ? '在线' : '离线'}</span></td>
+        <td>${esc(d.os || '-')}</td>
+        <td>${esc(d.ip || '-')}</td>
+        <td>${esc(d.lanip || '-')}</td>
+        <td>${esc(d.natType || '-')}</td>
+        <td>${esc(d.version || '-')}</td>
+        <td>${esc(d.activetime || '-')}</td>
+        <td>
+          <button class="ghost sm" onclick="openRename('${esc(d.name)}')">改名</button>
+          ${active ? `<button class="ghost sm" onclick="openLog('${esc(d.name)}')">查看日志</button>` : ''}
+          ${active ? `<button class="danger sm" onclick="restartDevice('${esc(d.name)}')">重启</button>` : ''}
+        </td>`;
+      body.appendChild(tr);
+    });
+  } catch (e) { toast(e.message, true); }
+}
+
+async function restartDevice(name) {
+  if (!confirm("确定重启设备 " + name + " ?")) return;
+  try { await api("/device/" + encodeURIComponent(name) + "/restart"); toast("已发送重启指令"); }
+  catch (e) { toast(e.message, true); }
+}
+
+/* ---------- device log ---------- */
+let logNode = "";
+let logOffset = 0;
+let logTimer = null;
+
+function openLog(name) {
+  logNode = name;
+  logOffset = 0;
+  document.getElementById("logNode").textContent = name;
+  document.getElementById("logContent").textContent = "加载中...";
+  document.getElementById("logAuto").checked = true;
+  openModal("logModal");
+  fetchLog(true);
+  startAutoLog();
+}
+
+function startAutoLog() {
+  stopAutoLog();
+  logTimer = setInterval(() => fetchLog(false), 2000);
+}
+function stopAutoLog() {
+  if (logTimer) { clearInterval(logTimer); logTimer = null; }
+}
+function toggleAutoLog() {
+  if (document.getElementById("logAuto").checked) startAutoLog();
+  else stopAutoLog();
+}
+function refreshLogOnce() { fetchLog(false); }
+
+function closeLog() {
+  stopAutoLog();
+  closeModal("logModal");
+}
+
+async function fetchLog(reset) {
+  if (!logNode) return;
+  try {
+    const data = await api("/device/" + encodeURIComponent(logNode) + "/log?offset=" + logOffset + "&len=65536");
+    if (data.error) {
+      if (data.error === 1) { document.getElementById("logContent").textContent = "设备已离线"; stopAutoLog(); }
+      else if (data.error === 9) { /* timeout, keep polling */ }
+      return;
+    }
+    const el = document.getElementById("logContent");
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+    const content = data.content || "";
+    if (reset) el.textContent = content;
+    else if (content) el.textContent += content;
+    // advance offset by actually returned bytes (utf-8 length)
+    if (content) logOffset += new Blob([content]).size;
+    else if (typeof data.total === "number" && logOffset === 0) logOffset = data.total;
+    if (atBottom) el.scrollTop = el.scrollHeight;
+  } catch (e) { /* transient, ignore during polling */ }
+}
+
+function openRename(name) {
+  document.getElementById("renameOld").value = name;
+  document.getElementById("renameNew").value = name;
+  openModal("renameModal");
+}
+async function submitRename() {
+  const oldName = document.getElementById("renameOld").value;
+  const newName = document.getElementById("renameNew").value.trim();
+  if (newName.length < 8) { toast("名称至少8个字符", true); return; }
+  try {
+    await api("/device/" + encodeURIComponent(oldName) + "/editnode", "POST", { newName });
+    closeModal("renameModal"); toast("已保存"); loadDevices();
+  } catch (e) { toast(e.message, true); }
+}
+
+/* ---------- networks ---------- */
+async function loadNetworks() {
+  const list = document.getElementById("netList");
+  list.innerHTML = "";
+  try {
+    const data = await api("/sdwan/networks");
+    const nets = data.networks || [];
+    document.getElementById("netEmpty").classList.toggle("hidden", nets.length > 0);
+    nets.forEach(n => list.appendChild(renderNetwork(n)));
+  } catch (e) { toast(e.message, true); }
+}
+
+function renderNetwork(n) {
+  const card = document.createElement("div");
+  card.className = "card";
+  const members = n.members || [];
+  let rows = members.map(m => `
+    <tr>
+      <td>${esc(m.name)}</td>
+      <td>${esc(m.ip || '-')}</td>
+      <td>${esc(m.resource || '-')}</td>
+      <td><span class="badge ${m.enable ? 'on' : 'off'}">${m.enable ? '启用' : '禁用'}</span></td>
+      <td>
+        <button class="ghost sm" onclick='openMember(${n.id}, ${JSON.stringify(m)})'>编辑</button>
+        <button class="danger sm" onclick="delMember(${n.id}, '${esc(m.name)}')">删除</button>
+      </td>
+    </tr>`).join("");
+  if (!members.length) rows = `<tr><td colspan="5" class="empty">暂无成员</td></tr>`;
+  card.innerHTML = `
+    <div class="toolbar" style="justify-content:space-between;margin-bottom:14px;">
+      <div>
+        <strong>${esc(n.name)}</strong>
+        <span class="badge ${n.enable ? 'on' : 'off'}" style="margin-left:8px;">${n.enable ? '已启用' : '未启用'}</span>
+        <span style="color:var(--muted);margin-left:10px;">网关 ${esc(n.gateway)} · ${esc(n.mode || 'fullmesh')}</span>
+      </div>
+      <div>
+        <button class="sm" onclick='openMemberNew(${n.id})'>添加成员</button>
+        <button class="ghost sm" onclick='openNetEdit(${JSON.stringify(n)})'>编辑</button>
+        <button class="danger sm" onclick="delNetwork(${n.id})">删除网络</button>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>节点</th><th>虚拟IP</th><th>资源路由</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  return card;
+}
+
+function openNetModal() {
+  document.getElementById("netModalTitle").textContent = "新建虚拟网络";
+  document.getElementById("netId").value = "";
+  document.getElementById("netName").value = "";
+  document.getElementById("netGateway").value = "10.2.3.1/24";
+  document.getElementById("netMode").value = "fullmesh";
+  document.getElementById("netEnable").value = "1";
+  openModal("netModal");
+}
+function openNetEdit(n) {
+  document.getElementById("netModalTitle").textContent = "编辑虚拟网络";
+  document.getElementById("netId").value = n.id;
+  document.getElementById("netName").value = n.name;
+  document.getElementById("netGateway").value = n.gateway;
+  document.getElementById("netMode").value = n.mode || "fullmesh";
+  document.getElementById("netEnable").value = String(n.enable || 0);
+  openModal("netModal");
+}
+async function submitNet() {
+  const id = document.getElementById("netId").value;
+  const body = {
+    name: document.getElementById("netName").value.trim(),
+    gateway: document.getElementById("netGateway").value.trim(),
+    mode: document.getElementById("netMode").value,
+    enable: parseInt(document.getElementById("netEnable").value),
+  };
+  if (id) body.id = parseInt(id);
+  if (!body.name || !body.gateway) { toast("请填写名称和网关", true); return; }
+  try { await api("/sdwan/network", "POST", body); closeModal("netModal"); toast("已保存"); loadNetworks(); }
+  catch (e) { toast(e.message, true); }
+}
+async function delNetwork(id) {
+  if (!confirm("确定删除该虚拟网络?")) return;
+  try { await api("/sdwan/network/" + id + "/delete", "POST", {}); toast("已删除"); loadNetworks(); }
+  catch (e) { toast(e.message, true); }
+}
+
+function openMemberNew(netId) {
+  document.getElementById("memNetId").value = netId;
+  document.getElementById("memName").value = "";
+  document.getElementById("memIP").value = "";
+  document.getElementById("memEnable").value = "1";
+  document.getElementById("memResource").value = "";
+  openModal("memberModal");
+}
+function openMember(netId, m) {
+  document.getElementById("memNetId").value = netId;
+  document.getElementById("memName").value = m.name;
+  document.getElementById("memIP").value = m.ip || "";
+  document.getElementById("memEnable").value = String(m.enable || 0);
+  document.getElementById("memResource").value = m.resource || "";
+  openModal("memberModal");
+}
+async function submitMember() {
+  const netId = document.getElementById("memNetId").value;
+  const body = {
+    name: document.getElementById("memName").value.trim(),
+    ip: document.getElementById("memIP").value.trim(),
+    enable: parseInt(document.getElementById("memEnable").value),
+    resource: document.getElementById("memResource").value.trim(),
+  };
+  if (body.name.length < 8) { toast("节点名至少8个字符", true); return; }
+  try {
+    const r = await api("/sdwan/network/" + netId + "/member", "POST", body);
+    closeModal("memberModal"); toast("已保存，IP " + (r.ip || "")); loadNetworks();
+  } catch (e) { toast(e.message, true); }
+}
+async function delMember(netId, name) {
+  if (!confirm("确定移除成员 " + name + " ?")) return;
+  try { await api("/sdwan/network/" + netId + "/member/delete", "POST", { name }); toast("已移除"); loadNetworks(); }
+  catch (e) { toast(e.message, true); }
+}
+
+/* ---------- install ---------- */
+function loadInstall() {
+  const host = location.hostname + ":27183";
+  document.getElementById("instServer").textContent = host;
+  document.getElementById("instToken").textContent = NODE_TOKEN || "(登录后获取)";
+  document.getElementById("instCmd").textContent =
+    "./openp2p -node <设备名> -token " + (NODE_TOKEN || "<token>") + " -serverhost " + location.hostname;
+}
+
+/* ---------- profile ---------- */
+async function loadProfile() {
+  try {
+    const p = await api("/user/profile");
+    document.getElementById("pfUser").textContent = p.user || USER;
+    document.getElementById("pfToken").textContent = p.token || NODE_TOKEN;
+    document.getElementById("pfAddtime").textContent = p.addtime || "-";
+    document.getElementById("pfEmail").value = p.email || "";
+    document.getElementById("pfPhone").value = p.phone || "";
+  } catch (e) { toast(e.message, true); }
+}
+async function saveProfile() {
+  const body = {
+    email: document.getElementById("pfEmail").value.trim(),
+    phone: document.getElementById("pfPhone").value.trim(),
+  };
+  try { await api("/user/profile", "POST", body); toast("已保存"); }
+  catch (e) { toast(e.message, true); }
+}
+
+/* ---------- helpers ---------- */
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function openModal(id) { document.getElementById(id).classList.remove("hidden"); }
+function closeModal(id) { document.getElementById(id).classList.add("hidden"); }
+
+document.getElementById("inPass").addEventListener("keydown", e => { if (e.key === "Enter") doAuth(); });
+
+/* ---------- boot ---------- */
+if (TOKEN) enterApp();
+</script>
+</body>
+</html>

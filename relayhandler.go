@@ -69,12 +69,17 @@ func (h *relayHandler) handleMessage(ctx *msgContext) error {
 			if reqSess.majorVer != sess.majorVer {
 				continue
 			}
+			// a node can't relay for itself or for the peer it wants to reach
+			if sess.nodeID == reqSess.nodeID || sess.nodeID == peerNodeID {
+				continue
+			}
 			// exclude requester itself
 			if sess.user != reqSess.user || sess.natType == NATSymmetric {
 				continue
 			}
-			// these two network could not connect directly, so filter them
-			if sess.IPv4 == reqSess.IPv4 || sess.IPv4 == peerIP {
+			// these two network could not connect directly, so filter them.
+			// loopback(local test) nodes share the same IP, skip this rule for them.
+			if !isLoopbackIP(sess.IPv4) && (sess.IPv4 == reqSess.IPv4 || sess.IPv4 == peerIP) {
 				continue
 			}
 			// // filter failNodes

@@ -40,7 +40,11 @@ func (h *loginHandler) handleMessage(ctx *msgContext) error {
 		}
 	case MsgHeartbeat:
 		wsSess.activeTime = time.Now()
-		wsSess.write(MsgHeartbeat, 0, "")
+		// client expects an 8-byte little-endian server timestamp(ns) as body for clock sync
+		tsBody := make([]byte, 8)
+		binary.LittleEndian.PutUint64(tsBody, uint64(time.Now().UnixNano()))
+		msg := append(encodeHeader(MsgHeartbeat, 0, uint32(len(tsBody))), tsBody...)
+		wsSess.writeBuff(msg)
 		// gLog.Printf(LvINFO, "%s heartbeat ok", wsSess.node)
 	default:
 		return nil

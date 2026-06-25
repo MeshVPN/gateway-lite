@@ -49,6 +49,7 @@ func (h *queryHandler) handleMessage(ctx *msgContext) error {
 			rsp.Online = 1
 			rsp.Version = toSess.version
 			rsp.IPv4 = toSess.IPv4
+			rsp.LanIP = toSess.lanIP
 			rsp.HasIPv4 = toSess.hasIPv4
 			rsp.HasUPNPorNATPMP = toSess.hasUPNPorNATPMP
 			rsp.NatType = toSess.natType

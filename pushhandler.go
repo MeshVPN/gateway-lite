@@ -106,6 +106,12 @@ func isSupportMsg(msgType uint16) bool {
 		msgType == MsgPushAddRelayTunnelReq ||
 		msgType == MsgPushAddRelayTunnelRsp ||
 		msgType == MsgPushUnderlayConnect ||
+		msgType == MsgPushServerSideSaveMemApp ||
+		msgType == MsgPushUpdate ||
+		msgType == MsgPushEditNode ||
+		msgType == MsgPushReportLog ||
+		msgType == MsgPushDstNodeOnline ||
+		msgType == MsgPushSDWanRefresh ||
 		msgType == MsgPushAPPKey {
 		return true
 	}
@@ -113,5 +119,5 @@ func isSupportMsg(msgType uint16) bool {
 }
 
 func isByPassMsg(msgType uint16) bool {
-	return msgType == MsgPushAPPKey
+	return msgType == MsgPushAPPKey || msgType == MsgPushServerSideSaveMemApp
 }

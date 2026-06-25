@@ -31,6 +31,8 @@ func main() {
 		gLog.Println(LvERROR, err)
 		return
 	}
+	gStore = newStore(filepath.Dir(os.Args[0]))
+	gStore.ensureUser(gUser, gPassword, gToken)
 	gHandler = &msgHandler{
 		handlers: make(map[uint16]handlerInterface),
 	}
@@ -41,6 +43,7 @@ func main() {
 	gHandler.registerHandler(MsgRelay, &relayHandler{})
 	gHandler.registerHandler(MsgReport, &reportHandler{})
 	gHandler.registerHandler(MsgQuery, &queryHandler{})
+	gHandler.registerHandler(MsgSDWAN, &sdwanHandler{})
 	nat := natHandler{}
 	gHandler.registerHandler(MsgNATDetect, &nat)
 	for i := 0; i < 16; i++ {
@@ -57,17 +60,17 @@ func main() {
 func initStun() {
 	go tcpServer(IfconfigPort1)
 	go tcpServer(IfconfigPort2)
-	_, err := newUDPServer(&net.UDPAddr{IP: net.IPv4zero, Port: UDPPort1})
-	if err != nil {
-		gLog.Println(LvERROR, "listen udp 1 failed:", err)
-		return
+	// client detects NAT type by sending UDP to two different ports(NATDetectPort1/2 = 27180/27181)
+	// and comparing the mapped public ports. so server must listen UDP STUN on these ports too,
+	// otherwise client UDP detect always times out and falls back to TCP (UDP punch unavailable).
+	stunPorts := []int{IfconfigPort1, IfconfigPort2, UDPPort1, UDPPort2}
+	for _, port := range stunPorts {
+		if _, err := newUDPServer(&net.UDPAddr{IP: net.IPv4zero, Port: port}); err != nil {
+			gLog.Printf(LvERROR, "listen STUN UDP on %d failed:%s", port, err)
+			return
+		}
 	}
-	_, err = newUDPServer(&net.UDPAddr{IP: net.IPv4zero, Port: UDPPort2})
-	if err != nil {
-		gLog.Println(LvERROR, "listen udp 2 failed:", err)
-		return
-	}
-	gLog.Printf(LvINFO, "listen STUN UDP on: %d and %d", UDPPort1, UDPPort2)
+	gLog.Printf(LvINFO, "listen STUN UDP on: %v", stunPorts)
 }
 
 func parseParams() error {

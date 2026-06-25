@@ -46,7 +46,22 @@ func (h *reportHandler) handleMessage(ctx *msgContext) error {
 		wsSess.version = req.Version
 		wsSess.majorVer = parseMajorVer(req.Version)
 		PushNotifyChan(wsSess.node)
-		// update db
+		// client waits for MsgReportBasicRsp, otherwise it exits
+		wsSess.write(MsgReport, MsgReportBasicRsp, nil)
+		// persist enriched device info(os/mac/lanip/ipv6)
+		gStore.upsertDevice(&StoreDevice{
+			Name:       wsSess.node,
+			User:       wsSess.user,
+			OS:         wsSess.os,
+			MAC:        wsSess.mac,
+			LanIP:      wsSess.lanIP,
+			IPv4:       wsSess.IPv4,
+			IPv6:       wsSess.IPv6,
+			NatType:    wsSess.natType,
+			Bandwidth:  wsSess.shareBandWidth,
+			Version:    wsSess.version,
+			Activetime: time.Now().Format("2006-01-02 15:04:05"),
+		})
 	case MsgReportQuery:
 		gLog.Println(LvINFO, "MsgReportQuery")
 		wsSess.rspCh <- ctx.msg[openP2PHeaderSize:]
